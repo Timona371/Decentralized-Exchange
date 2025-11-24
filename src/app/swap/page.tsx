@@ -288,14 +288,14 @@ export default function SwapPage() {
                   const signer = await provider.getSigner();
                   // precise conversion using ethers.parseUnits
                   const amountIn = parseUnits(sellAmount, sellToken.decimals ?? 18) as any;
-                  const minOut = quote ? (parseUnits(quote.minReceived, buyToken.decimals ?? 18) as any) : (0n as any);
+                  const minOut = quote ? (parseUnits(quote.minReceived, buyToken.decimals ?? 18) as any) : (parseUnits("0", buyToken.decimals ?? 18) as any);
                   // call helper — router ABI should match your deployed router
                   const receipt = await amm.swap(signer as any, ROUTER_ADDRESS, sellToken.address, buyToken.address, amountIn, minOut);
                   console.log("Swap receipt", receipt);
                   alert("Swap transaction submitted — see console for receipt");
                 } catch (err) {
                   console.error(err);
-                  alert("Swap failed: " + (err as any)?.message ?? "unknown");
+                  alert("Swap failed: " + (((err as any)?.message) ?? "unknown"));
                 } finally {
                   setSubmitting(false);
                 }

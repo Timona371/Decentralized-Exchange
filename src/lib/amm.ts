@@ -59,6 +59,19 @@ export async function getAllPools(
  * It will try common router methods (getAmountsOut) and fallback to reading pair reserves.
  * Returns amountOut as a string in base units (wei) or null if unable to quote.
  */
+async function resolveAbi(maybeAbi: any, importPath: string, fallback: any) {
+  if (maybeAbi) return maybeAbi;
+  try {
+    // dynamic import allows dropping ABI json into src/abis/Router.json etc.
+    // path is relative to the compiled module location; using explicit path for Next.js
+    // may require adjustment depending on bundler. We try a few likely locations.
+    const mod = await import(importPath);
+    return (mod && (mod.default ?? mod)) || fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
 export async function getQuote(
   provider: Provider | any,
   routerAddress: string,
@@ -67,11 +80,13 @@ export async function getQuote(
   amountInHuman: string,
   decimalsIn = 18,
   decimalsOut = 18,
-  routerAbi: any = DEFAULT_ROUTER_ABI,
+  routerAbi?: any,
   factoryAddress?: string,
-  factoryAbi: any = DEFAULT_FACTORY_ABI_FULL,
+  factoryAbi?: any,
 ) {
-  const router = new Contract(routerAddress, routerAbi, provider);
+  const resolvedRouterAbi = await resolveAbi(routerAbi, "@/abis/Router.json", DEFAULT_ROUTER_ABI);
+  const resolvedFactoryAbi = await resolveAbi(factoryAbi, "@/abis/Factory.json", DEFAULT_FACTORY_ABI_FULL);
+  const router = new Contract(routerAddress, resolvedRouterAbi, provider);
   // convert to wei-like amount
   const amountIn = parseUnits(amountInHuman, decimalsIn);
   // try getAmountsOut(path)
@@ -88,7 +103,7 @@ export async function getQuote(
   // fallback: try factory -> pair -> getReserves
   if (factoryAddress) {
     try {
-      const factory = new Contract(factoryAddress, factoryAbi, provider);
+      const factory = new Contract(factoryAddress, resolvedFactoryAbi, provider);
       // try common function names
       let pairAddress: string | null = null;
       try {
@@ -135,9 +150,10 @@ export async function createPool(
   tokenA: string,
   tokenB: string,
   fee: number,
-  factoryAbi: any = DEFAULT_FACTORY_ABI,
+  factoryAbi?: any,
 ) {
-  const factory = new Contract(factoryAddress, factoryAbi, signer);
+  const resolvedFactoryAbi = await resolveAbi(factoryAbi, "@/abis/Factory.json", DEFAULT_FACTORY_ABI);
+  const factory = new Contract(factoryAddress, resolvedFactoryAbi, signer);
   const tx = await factory.createPool(tokenA, tokenB, fee);
   return tx.wait?.();
 }
@@ -154,9 +170,10 @@ export async function addLiquidity(
   tokenB: string,
   amountA: string | number,
   amountB: string | number,
-  routerAbi: any = DEFAULT_ROUTER_ABI,
+  routerAbi?: any,
 ) {
-  const router = new Contract(routerAddress, routerAbi, signer);
+  const resolvedRouterAbi = await resolveAbi(routerAbi, "@/abis/Router.json", DEFAULT_ROUTER_ABI);
+  const router = new Contract(routerAddress, resolvedRouterAbi, signer);
   const tx = await router.addLiquidity(poolAddress, tokenA, tokenB, amountA, amountB);
   return tx.wait?.();
 }
@@ -169,9 +186,10 @@ export async function removeLiquidity(
   routerAddress: string,
   poolAddress: string,
   shares: string | number,
-  routerAbi: any = DEFAULT_ROUTER_ABI,
+  routerAbi?: any,
 ) {
-  const router = new Contract(routerAddress, routerAbi, signer);
+  const resolvedRouterAbi = await resolveAbi(routerAbi, "@/abis/Router.json", DEFAULT_ROUTER_ABI);
+  const router = new Contract(routerAddress, resolvedRouterAbi, signer);
   const tx = await router.removeLiquidity(poolAddress, shares);
   return tx.wait?.();
 }
@@ -186,9 +204,10 @@ export async function swap(
   tokenOut: string,
   amountIn: string | number,
   minAmountOut: string | number,
-  routerAbi: any = DEFAULT_ROUTER_ABI,
+  routerAbi?: any,
 ) {
-  const router = new Contract(routerAddress, routerAbi, signer);
+  const resolvedRouterAbi = await resolveAbi(routerAbi, "@/abis/Router.json", DEFAULT_ROUTER_ABI);
+  const router = new Contract(routerAddress, resolvedRouterAbi, signer);
   const tx = await router.swap(tokenIn, tokenOut, amountIn, minAmountOut);
   return tx.wait?.();
 }
