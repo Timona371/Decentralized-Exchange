@@ -1,17 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { useAccount, useChainId } from "wagmi";
 
 import { networks } from "@/config/wagmi";
 import { shortenAddress } from "@/lib/utils";
+import { BrowserProvider, parseUnits, formatUnits } from "ethers";
+import amm from "@/lib/amm";
+
+// Add real addresses when available. These are placeholders used for example.
+const ROUTER_ADDRESS = process.env.NEXT_PUBLIC_ROUTER_ADDRESS ?? "0x0000000000000000000000000000000000000000";
+const FACTORY_ADDRESS = process.env.NEXT_PUBLIC_FACTORY_ADDRESS ?? "0x0000000000000000000000000000000000000000";
 
 const tokens = [
-  { symbol: "ETH", name: "Ethereum", balance: "12.46", price: "$2,980.20" },
-  { symbol: "USDC", name: "USD Coin", balance: "42,300.12", price: "$1.00" },
-  { symbol: "WBTC", name: "Wrapped Bitcoin", balance: "2.14", price: "$58,420.15" },
-  { symbol: "ARB", name: "Arbitrum", balance: "18,920.00", price: "$1.23" },
+  { symbol: "ETH", name: "Ethereum", address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", balance: "12.46", price: 2980.2, decimals: 18 },
+  { symbol: "USDC", name: "USD Coin", address: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", balance: "42300.12", price: 1.0, decimals: 6 },
+  { symbol: "WBTC", name: "Wrapped Bitcoin", address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", balance: "2.14", price: 58420.15, decimals: 8 },
+  { symbol: "ARB", name: "Arbitrum", address: "0x0000000000000000000000000000000000000001", balance: "18920.00", price: 1.23, decimals: 18 },
 ];
 
 const slippageOptions = ["0.3%", "0.5%", "1.0%"];
@@ -44,23 +50,69 @@ export default function SwapPage() {
   const [buyToken, setBuyToken] = useState(tokens[1]);
   const [slippage, setSlippage] = useState("0.5%");
   const [advancedMode, setAdvancedMode] = useState(false);
+  const [sellAmount, setSellAmount] = useState<string>("");
+  const [estimatedBuyAmount, setEstimatedBuyAmount] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
 
   const activeNetwork = useMemo(
     () => (chainId ? networks.find((item) => item.id === chainId) : undefined),
     [chainId],
   );
 
-  const quote = useMemo(() => {
-    if (!isConnected) return null;
-    return {
-      sellAmount: "6.50",
-      buyAmount: "19,388.45",
-      minReceived: "19,291.50",
-      executionPrice: "1 ETH = 2,982.07 USDC",
-      impact: "0.04%",
-      routeCount: 5,
+  const [quote, setQuote] = useState<null | {
+    sellAmount: string;
+    buyAmount: string;
+    minReceived: string;
+    executionPrice: string;
+    impact: string;
+    routeCount: number;
+  }>(null);
+
+  // Fetch on-chain quote when sellAmount or tokens change.
+  useEffect(() => {
+    let mounted = true;
+    setQuote(null);
+    if (!isConnected || !sellAmount || !sellToken || !buyToken) return;
+    // create a provider for reads; uses injected provider for the current network
+    if (!window.ethereum) return;
+    const provider = new BrowserProvider(window.ethereum as any);
+    (async () => {
+      try {
+        const out = await amm.getQuote(
+          provider as any,
+          ROUTER_ADDRESS,
+          sellToken.address,
+          buyToken.address,
+          sellAmount,
+          sellToken.decimals ?? 18,
+          buyToken.decimals ?? 18,
+          undefined,
+          FACTORY_ADDRESS,
+        );
+        if (!mounted) return;
+        if (!out) {
+          setQuote(null);
+          return;
+        }
+        const buyHuman = formatUnits(out, buyToken.decimals ?? 18);
+        const minReceived = (Number(buyHuman) * 0.995).toFixed(6);
+        setQuote({
+          sellAmount: sellAmount,
+          buyAmount: buyHuman,
+          minReceived,
+          executionPrice: `1 ${sellToken.symbol} ≈ ${(Number(sellToken.price as number) / Number(buyToken.price as number)).toFixed(6)} ${buyToken.symbol}`,
+          impact: "~0.04%",
+          routeCount: 1,
+        });
+      } catch (e) {
+        console.error("quote error", e);
+        if (mounted) setQuote(null);
+      }
+    })();
+    return () => {
+      mounted = false;
     };
-  }, [isConnected]);
+  }, [isConnected, sellAmount, sellToken, buyToken]);
 
   const handleFlip = () => {
     setSellToken(buyToken);
@@ -137,6 +189,8 @@ export default function SwapPage() {
                   type="number"
                   placeholder={isConnected ? "0.0" : "Connect wallet"}
                   disabled={!isConnected}
+                  value={sellAmount}
+                  onChange={(e) => setSellAmount(e.target.value)}
                   className="w-full max-w-[160px] rounded-2xl border border-transparent bg-transparent text-right text-3xl font-semibold tracking-tight text-zinc-900 outline-none placeholder:text-zinc-300 dark:text-zinc-100"
                 />
               </div>
@@ -178,6 +232,7 @@ export default function SwapPage() {
                   type="text"
                   placeholder={isConnected ? "~ 0.00" : "—"}
                   disabled
+                  value={quote?.buyAmount ?? ""}
                   className="w-full max-w-[160px] rounded-2xl border border-transparent bg-transparent text-right text-3xl font-semibold tracking-tight text-emerald-500 outline-none"
                 />
               </div>
@@ -223,9 +278,30 @@ export default function SwapPage() {
 
             <button
               className="w-full rounded-2xl bg-emerald-500 py-4 text-base font-semibold text-white shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-600 disabled:bg-zinc-300 disabled:text-zinc-500"
-              disabled={!isConnected}
+              disabled={!isConnected || !sellAmount || submitting}
+              onClick={async () => {
+                if (!isConnected || !sellAmount) return;
+                if (!window.ethereum) return alert("No injected wallet found");
+                try {
+                  setSubmitting(true);
+                  const provider = new BrowserProvider(window.ethereum as any);
+                  const signer = await provider.getSigner();
+                  // precise conversion using ethers.parseUnits
+                  const amountIn = parseUnits(sellAmount, sellToken.decimals ?? 18) as any;
+                  const minOut = quote ? (parseUnits(quote.minReceived, buyToken.decimals ?? 18) as any) : (0n as any);
+                  // call helper — router ABI should match your deployed router
+                  const receipt = await amm.swap(signer as any, ROUTER_ADDRESS, sellToken.address, buyToken.address, amountIn, minOut);
+                  console.log("Swap receipt", receipt);
+                  alert("Swap transaction submitted — see console for receipt");
+                } catch (err) {
+                  console.error(err);
+                  alert("Swap failed: " + (err as any)?.message ?? "unknown");
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
             >
-              {isConnected ? "Review & Execute" : "Connect Wallet to Swap"}
+              {isConnected ? (submitting ? "Submitting…" : "Review & Execute") : "Connect Wallet to Swap"}
             </button>
             {isConnected ? (
               <p className="text-center text-xs text-zinc-500 dark:text-zinc-400">

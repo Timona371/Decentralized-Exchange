@@ -1,4 +1,4 @@
-import { Contract, type JsonRpcSigner, type Provider } from "ethers";
+import { Contract, parseUnits, formatUnits, type JsonRpcSigner, type Provider } from "ethers";
 
 export type Pool = {
   token0: string;
@@ -20,6 +20,15 @@ const DEFAULT_ROUTER_ABI = [
   "function swap(address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut) external returns (uint256)",
   "function addLiquidity(address pool, address tokenA, address tokenB, uint256 amountA, uint256 amountB) external returns (uint256 shares)",
   "function removeLiquidity(address pool, uint256 shares) external returns (uint256 amountA, uint256 amountB)",
+  // common router read helpers
+  "function getAmountsOut(uint256 amountIn, address[] calldata path) view returns (uint256[])",
+];
+
+const DEFAULT_FACTORY_ABI_FULL = [
+  ...DEFAULT_FACTORY_ABI,
+  // common factory helpers
+  "function getPool(address tokenA, address tokenB, uint24 fee) view returns (address)",
+  "function getPair(address tokenA, address tokenB) view returns (address)",
 ];
 
 /**
@@ -43,6 +52,76 @@ export async function getAllPools(
     blockNumber: ev.blockNumber,
     txHash: ev.transactionHash,
   }));
+}
+
+/**
+ * Try to compute an on-chain quote for tokenIn -> tokenOut for a given amountIn.
+ * It will try common router methods (getAmountsOut) and fallback to reading pair reserves.
+ * Returns amountOut as a string in base units (wei) or null if unable to quote.
+ */
+export async function getQuote(
+  provider: Provider | any,
+  routerAddress: string,
+  tokenIn: string,
+  tokenOut: string,
+  amountInHuman: string,
+  decimalsIn = 18,
+  decimalsOut = 18,
+  routerAbi: any = DEFAULT_ROUTER_ABI,
+  factoryAddress?: string,
+  factoryAbi: any = DEFAULT_FACTORY_ABI_FULL,
+) {
+  const router = new Contract(routerAddress, routerAbi, provider);
+  // convert to wei-like amount
+  const amountIn = parseUnits(amountInHuman, decimalsIn);
+  // try getAmountsOut(path)
+  try {
+    if (typeof router.getAmountsOut === "function") {
+      const amounts: any = await router.getAmountsOut(amountIn, [tokenIn, tokenOut]);
+      const out = amounts[amounts.length - 1];
+      return out.toString();
+    }
+  } catch (e) {
+    // ignore and try next
+  }
+
+  // fallback: try factory -> pair -> getReserves
+  if (factoryAddress) {
+    try {
+      const factory = new Contract(factoryAddress, factoryAbi, provider);
+      // try common function names
+      let pairAddress: string | null = null;
+      try {
+        pairAddress = await factory.getPair(tokenIn, tokenOut);
+      } catch {}
+      if (!pairAddress) {
+        try {
+          pairAddress = await factory.getPool(tokenIn, tokenOut, 3000);
+        } catch {}
+      }
+      if (pairAddress && pairAddress !== "0x0000000000000000000000000000000000000000") {
+        const pairAbi = ["function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)", "function token0() view returns (address)"];
+        const pair = new Contract(pairAddress, pairAbi, provider);
+        const token0 = await pair.token0();
+        const reserves: any = await pair.getReserves();
+        let reserveIn, reserveOut;
+        if (token0.toLowerCase() === tokenIn.toLowerCase()) {
+          reserveIn = reserves[0];
+          reserveOut = reserves[1];
+        } else {
+          reserveIn = reserves[1];
+          reserveOut = reserves[0];
+        }
+        // price formula for UniswapV2: amountOut = amountIn * reserveOut / reserveIn (ignoring fees)
+        const amountOut = (amountIn * reserveOut) / reserveIn;
+        return amountOut.toString();
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -146,6 +225,7 @@ export async function getUserLiquidity(
 
 export default {
   getAllPools,
+  getQuote,
   createPool,
   addLiquidity,
   removeLiquidity,
