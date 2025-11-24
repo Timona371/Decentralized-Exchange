@@ -78,7 +78,7 @@ export default function PoolsPage() {
               volume24h: "—", // Would need to track from swap events
               feeTier,
               utilization: "—", // Would need to calculate
-              poolInfo,
+              poolInfo: poolInfo ?? undefined,
             };
           })
         );

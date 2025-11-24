@@ -88,7 +88,7 @@ export const getUserLiquidity = async (
     return BigInt(balance.toString());
   } catch (error) {
     console.error("Error getting user liquidity:", error);
-    return 0n;
+    return BigInt(0);
   }
 };
 
@@ -125,8 +125,8 @@ export const getAllPools = async (
     const filter = contract.filters.PoolCreated();
     const events = await contract.queryFilter(filter, fromBlock || 0);
     
-    return events.map((event) => {
-      const args = event.args as any;
+    return events.map((event: any) => {
+      const args = (event as any).args;
       return {
         poolId: args.poolId,
         token0: args.token0,
@@ -180,7 +180,7 @@ export const createPool = async (
     });
     
     let poolId = "";
-    let liquidity = 0n;
+    let liquidity = BigInt(0);
     
     if (poolCreatedEvent) {
       const parsed = contract.interface.parseLog(poolCreatedEvent);
@@ -240,9 +240,9 @@ export const addLiquidity = async (
       }
     });
     
-    let liquidity = 0n;
-    let amount0 = 0n;
-    let amount1 = 0n;
+    let liquidity = BigInt(0);
+    let amount0 = BigInt(0);
+    let amount1 = BigInt(0);
     
     if (liquidityAddedEvent) {
       const parsed = contract.interface.parseLog(liquidityAddedEvent);
@@ -290,8 +290,8 @@ export const removeLiquidity = async (
       }
     });
     
-    let amount0 = 0n;
-    let amount1 = 0n;
+    let amount0 = BigInt(0);
+    let amount1 = BigInt(0);
     
     if (liquidityRemovedEvent) {
       const parsed = contract.interface.parseLog(liquidityRemovedEvent);
@@ -345,7 +345,7 @@ export const swap = async (
       }
     });
     
-    let amountOut = 0n;
+    let amountOut = BigInt(0);
     
     if (swapEvent) {
       const parsed = contract.interface.parseLog(swapEvent);

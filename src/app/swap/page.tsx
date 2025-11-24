@@ -154,10 +154,12 @@ export default function SwapPage() {
       setAmountIn("");
 
       // Refresh pool info
-      const provider = publicClientToProvider(publicClient);
-      if (provider) {
-        const pool = await getPool(poolId, AMM_CONTRACT_ADDRESS, provider);
-        setPoolInfo(pool);
+      if (publicClient) {
+        const provider = publicClientToProvider(publicClient);
+        if (provider) {
+          const pool = await getPool(poolId, AMM_CONTRACT_ADDRESS, provider);
+          setPoolInfo(pool);
+        }
       }
     } catch (err) {
       console.error("Error executing swap:", err);
