@@ -827,4 +827,35 @@ describe("AMM", async () => {
     assert.ok(BigInt(userBalance) > 1000n, "User should receive much more than minimum");
     assert.equal(BigInt(totalSupply), BigInt(userBalance) + BigInt(lockedBalance), "Total should equal user + locked");
   });
+
+  it("maintains minimum protection after adding more liquidity", async () => {
+    if (!poolId) {
+      const events = await publicClient.getContractEvents({
+        address: amm.address,
+        abi: amm.abi,
+        eventName: "PoolCreated",
+        fromBlock: 0n,
+        strict: true,
+      });
+      poolId = (events[0] as any).args.poolId as `0x${string}`;
+    }
+
+    const initialLocked = await amm.read.getLpBalance([poolId, "0x0000000000000000000000000000000000000000"]);
+    assert.equal(initialLocked, 1000n, "Initial locked should be 1000");
+
+    // Add more liquidity
+    const extraA = 1_000n * 10n ** 18n;
+    const extraB = 2_000n * 10n ** 18n;
+
+    await tokenA.write.approve([amm.address, extraA], { account: deployer.account });
+    await tokenB.write.approve([amm.address, extraB], { account: deployer.account });
+
+    await amm.write.addLiquidity([poolId, extraA, extraB], {
+      account: deployer.account
+    });
+
+    // Locked liquidity should remain unchanged
+    const lockedAfter = await amm.read.getLpBalance([poolId, "0x0000000000000000000000000000000000000000"]);
+    assert.equal(lockedAfter, 1000n, "Locked liquidity should remain constant after adding more");
+  });
 });
