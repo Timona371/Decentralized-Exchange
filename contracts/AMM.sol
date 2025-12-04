@@ -137,7 +137,7 @@ contract AMM is ReentrancyGuard, Ownable {
         _safeTransferFrom(token1, msg.sender, address(this), amount1);
 
         liquidity = _sqrt(amount0 * amount1);
-        require(liquidity > 0, "insufficient liquidity");
+        require(liquidity > MINIMUM_LIQUIDITY, "insufficient liquidity");
 
         pool.token0 = token0;
         pool.token1 = token1;
