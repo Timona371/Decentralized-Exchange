@@ -660,4 +660,39 @@ describe("AMM", async () => {
       }
     }
   });
+
+  it("verifies MINIMUM_LIQUIDITY constant value is 1000", async () => {
+    // This test indirectly verifies the constant by checking behavior
+    const smallA = 1001n; // sqrt(1001 * 1001) = 1001, which is > 1000
+    const smallB = 1001n;
+
+    const tokenK = await viem.deployContract("MockToken", ["TokenK", "TKK", 18], {
+      account: deployer.account,
+    });
+    const tokenL = await viem.deployContract("MockToken", ["TokenL", "TKL", 18], {
+      account: deployer.account,
+    });
+
+    await tokenK.write.approve([amm.address, smallA], { account: deployer.account });
+    await tokenL.write.approve([amm.address, smallB], { account: deployer.account });
+
+    const tx = await amm.write.createPool(
+      [tokenK.address, tokenL.address, smallA, smallB],
+      { account: deployer.account }
+    );
+    await publicClient.getTransactionReceipt({ hash: tx });
+
+    const events = await publicClient.getContractEvents({
+      address: amm.address,
+      abi: amm.abi,
+      eventName: "PoolCreated",
+      fromBlock: 0n,
+      strict: true,
+    });
+
+    const verifyPoolId = (events[events.length - 1] as any).args.poolId as `0x${string}`;
+    const lockedBalance = await amm.read.getLpBalance([verifyPoolId, "0x0000000000000000000000000000000000000000"]);
+
+    assert.equal(lockedBalance, 1000n, "MINIMUM_LIQUIDITY should be exactly 1000");
+  });
 });
