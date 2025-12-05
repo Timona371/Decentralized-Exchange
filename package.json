@@ -3,13 +3,15 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "@openzeppelin/contracts": "^5.4.0"
+    "@openzeppelin/contracts": "^5.4.0",
+    "dotenv": "^17.2.3"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.1",
     "@types/chai": "^5.2.3",
     "@types/node": "^24.10.1",
     "chai": "^6.2.1",
+    "forge-std": "github:foundry-rs/forge-std#v1.9.7",
     "hardhat": "^3.0.15",
     "ts-node": "^10.9.2",
     "tslib": "^2.8.1",

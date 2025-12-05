@@ -5,6 +5,12 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+/// @title Automated Market Maker (AMM) Contract
+/// @notice Implements a constant product market maker (x * y = k) with liquidity provision
+/// @dev Security Features:
+///      - Minimum liquidity lock prevents pool drainage attacks
+///      - ReentrancyGuard protects against reentrancy attacks
+///      - Ownable pattern for access control
 contract AMM is ReentrancyGuard, Ownable {
     struct Pool {
         address token0;
@@ -22,6 +28,14 @@ contract AMM is ReentrancyGuard, Ownable {
 
     // Global default fee in basis points (e.g., 30 = 0.30%)
     uint16 public immutable defaultFeeBps;
+
+    /// @notice Minimum liquidity to lock forever on first pool creation
+    /// @dev This prevents pool drainage attacks by ensuring some liquidity always remains.
+    /// The locked liquidity is sent to address(0) and can never be removed.
+    /// This is a critical security feature that prevents the last LP from draining the pool completely.
+    /// The value of 1000 is chosen to be small enough to not significantly impact users,
+    /// but large enough to prevent rounding errors and ensure pool stability.
+    uint256 private constant MINIMUM_LIQUIDITY = 1000;
 
     event PoolCreated(
         bytes32 indexed poolId,
@@ -105,6 +119,15 @@ contract AMM is ReentrancyGuard, Ownable {
         poolId = keccak256(abi.encodePacked(token0, token1, feeBps));
     }
 
+    /// @notice Creates a new liquidity pool for a token pair
+    /// @dev On first liquidity provision, MINIMUM_LIQUIDITY is locked forever to address(0)
+    /// to prevent pool drainage attacks. The user receives liquidity minus MINIMUM_LIQUIDITY.
+    /// @param tokenA First token address
+    /// @param tokenB Second token address
+    /// @param amountA Amount of tokenA to provide
+    /// @param amountB Amount of tokenB to provide
+    /// @return poolId The unique identifier for the pool
+    /// @return liquidity The amount of liquidity tokens minted (excluding locked portion)
     function createPool(
         address tokenA,
         address tokenB,
@@ -132,17 +155,31 @@ contract AMM is ReentrancyGuard, Ownable {
         _safeTransferFrom(token0, msg.sender, address(this), amount0);
         _safeTransferFrom(token1, msg.sender, address(this), amount1);
 
+        // Calculate liquidity using constant product formula: sqrt(x * y)
         liquidity = _sqrt(amount0 * amount1);
-        require(liquidity > 0, "insufficient liquidity");
+        // Use strict greater than to ensure we can subtract MINIMUM_LIQUIDITY
+        // If liquidity equals MINIMUM_LIQUIDITY, user would receive 0, which is invalid
+        require(liquidity > MINIMUM_LIQUIDITY, "insufficient liquidity");
+
+        // Lock MINIMUM_LIQUIDITY forever by assigning to address(0)
+        // This prevents the last LP from draining the pool completely.
+        // Formula: userLiquidity = sqrt(x * y) - MINIMUM_LIQUIDITY
+        // The locked liquidity ensures the pool always has a minimum reserve
+        uint256 lockedLiquidity = MINIMUM_LIQUIDITY;
+        uint256 userLiquidity = liquidity - lockedLiquidity;
 
         pool.token0 = token0;
         pool.token1 = token1;
         pool.reserve0 = uint112(amount0);
         pool.reserve1 = uint112(amount1);
         pool.feeBps = feeBps;
+        // totalSupply includes locked liquidity to maintain accurate accounting
         pool.totalSupply = liquidity;
         pool.exists = true;
-        pool.balanceOf[msg.sender] = liquidity;
+        // Lock MINIMUM_LIQUIDITY to address(0) - this can never be removed
+        pool.balanceOf[address(0)] = lockedLiquidity;
+        // User receives liquidity minus the locked portion
+        pool.balanceOf[msg.sender] = userLiquidity;
 
         emit PoolCreated(
             poolId,
@@ -155,7 +192,7 @@ contract AMM is ReentrancyGuard, Ownable {
             msg.sender
         );
 
-        emit LiquidityAdded(poolId, msg.sender, liquidity, amount0, amount1);
+        emit LiquidityAdded(poolId, msg.sender, userLiquidity, amount0, amount1);
     }
 
     function addLiquidity(
@@ -199,6 +236,13 @@ contract AMM is ReentrancyGuard, Ownable {
         emit LiquidityAdded(poolId, msg.sender, liquidity, amount0, amount1);
     }
 
+    /// @notice Removes liquidity from a pool
+    /// @dev Prevents removing liquidity that would leave the pool below MINIMUM_LIQUIDITY.
+    /// This ensures the locked liquidity protection remains effective.
+    /// @param poolId The pool identifier
+    /// @param liquidity Amount of liquidity tokens to burn
+    /// @return amount0 Amount of token0 received
+    /// @return amount1 Amount of token1 received
     function removeLiquidity(
         bytes32 poolId,
         uint256 liquidity
@@ -217,8 +261,15 @@ contract AMM is ReentrancyGuard, Ownable {
         amount1 = (liquidity * reserve1) / _totalSupply;
         require(amount0 > 0 && amount1 > 0, "insufficient amounts");
 
+        // Prevent removing liquidity that would leave pool below MINIMUM_LIQUIDITY
+        // This ensures the locked liquidity protection remains effective.
+        // The check uses >= to allow removal down to exactly MINIMUM_LIQUIDITY,
+        // but never below it, preserving the security guarantee.
+        uint256 remainingSupply = _totalSupply - liquidity;
+        require(remainingSupply >= MINIMUM_LIQUIDITY, "insufficient liquidity");
+
         pool.balanceOf[msg.sender] = balance - liquidity;
-        pool.totalSupply = _totalSupply - liquidity;
+        pool.totalSupply = remainingSupply;
         pool.reserve0 = uint112(uint256(reserve0) - amount0);
         pool.reserve1 = uint112(uint256(reserve1) - amount1);
 

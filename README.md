@@ -22,6 +22,7 @@ QuantumDEX consists of two main protocol contracts:
 
 - ✅ Constant Product Market Maker (CPMM) formula
 - ✅ Configurable swap fees (basis points)
+- ✅ Minimum liquidity lock to prevent pool drainage attacks
 - ✅ Reentrancy protection
 - ✅ Comprehensive test coverage
 - ✅ Gas-optimized storage layout
@@ -141,6 +142,24 @@ When pushing your changes, include the issue number or title in your commit mess
 ## Security
 
 This codebase has been reviewed for common vulnerabilities, but **has not undergone a professional security audit**. Use at your own risk.
+
+### Security Features
+
+- **Minimum Liquidity Lock**: On pool creation, 1000 liquidity tokens are permanently locked to address(0). This prevents pool drainage attacks where the last liquidity provider could drain the entire pool, leaving it unusable.
+
+- **Reentrancy Protection**: All state-changing functions are protected with `nonReentrant` modifier to prevent reentrancy attacks.
+
+- **Access Control**: Owner-only functions use OpenZeppelin's `Ownable` pattern for secure access control.
+
+### Minimum Liquidity Lock Implementation
+
+The minimum liquidity lock is implemented by:
+1. Requiring `sqrt(amount0 * amount1) > MINIMUM_LIQUIDITY` on pool creation
+2. Locking `MINIMUM_LIQUIDITY` (1000) tokens to `address(0)` forever
+3. User receives `sqrt(amount0 * amount1) - MINIMUM_LIQUIDITY` tokens
+4. Preventing removal of liquidity that would leave pool below `MINIMUM_LIQUIDITY`
+
+This ensures pools can never be completely drained, maintaining protocol stability.
 
 ## License
 
