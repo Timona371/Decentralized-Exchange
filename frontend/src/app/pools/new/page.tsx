@@ -1,17 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAccount, useWalletClient } from "wagmi";
-import { createPool, AMM_CONTRACT_ADDRESS } from "@/lib/amm";
-import { walletClientToSigner } from "@/config/adapter";
-
-const feeTiers = [
-  { value: "0.01%", description: "Best for stable pairs with minimal volatility." },
-  { value: "0.03%", description: "Balanced fee for blue-chip markets." },
-  { value: "0.05%", description: "Maximize yield for long-tail assets." },
-];
+import { useAccount, usePublicClient, useWalletClient } from "wagmi";
+import { parseUnits } from "ethers";
+import {
+  AMM_CONTRACT_ADDRESS,
+  approveToken,
+  createPool,
+  getDefaultFeeBps,
+  getPoolId,
+  getTokenAllowance,
+  getTokenDecimals,
+  sortTokenAddresses,
+} from "@/lib/amm";
+import { publicClientToProvider, walletClientToSigner } from "@/config/adapter";
 
 const launchChecklist = [
   "Token contracts verified and decimals confirmed",
@@ -22,6 +26,7 @@ const launchChecklist = [
 
 export default function CreatePoolPage() {
   const { isConnected, address } = useAccount();
+  const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
   const router = useRouter();
   
@@ -29,10 +34,31 @@ export default function CreatePoolPage() {
   const [token1, setToken1] = useState("");
   const [amount0, setAmount0] = useState("");
   const [amount1, setAmount1] = useState("");
-  const [selectedFeeTier, setSelectedFeeTier] = useState("0.01%");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [defaultFeeBps, setDefaultFeeBps] = useState<number | null>(null);
+  const [resolvedPoolId, setResolvedPoolId] = useState<string | null>(null);
+
+  // Read the AMM's default fee bps for display + deterministic poolId.
+  // Note: current AMM contract uses defaultFeeBps (not user-selectable).
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!publicClient || !AMM_CONTRACT_ADDRESS) return;
+      const provider = publicClientToProvider(publicClient);
+      if (!provider) return;
+      try {
+        const fee = await getDefaultFeeBps(AMM_CONTRACT_ADDRESS, provider);
+        if (mounted) setDefaultFeeBps(fee);
+      } catch (e) {
+        console.warn("Failed to read defaultFeeBps", e);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [publicClient]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,33 +82,68 @@ export default function CreatePoolPage() {
       setLoading(true);
       setError(null);
       setSuccess(null);
+      setResolvedPoolId(null);
+
+      // Deterministic token ordering.
+      const sorted = sortTokenAddresses(token0, token1);
 
       const signer = await walletClientToSigner(walletClient);
       if (!signer) {
         throw new Error("Failed to get signer");
       }
 
-      // Convert amounts to BigInt (assuming 18 decimals for now)
-      const amount0BigInt = BigInt(Math.floor(parseFloat(amount0) * 1e18));
-      const amount1BigInt = BigInt(Math.floor(parseFloat(amount1) * 1e18));
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("Wallet provider not available");
+      }
+
+      // Fee tier is currently defaultFeeBps (not user-selectable).
+      const feeBps = defaultFeeBps ?? (await getDefaultFeeBps(AMM_CONTRACT_ADDRESS, provider));
+
+      // Resolve decimals and parse amounts correctly.
+      const [decimals0, decimals1] = await Promise.all([
+        getTokenDecimals(provider, sorted.token0),
+        getTokenDecimals(provider, sorted.token1),
+      ]);
+
+      const amount0BigInt = parseUnits(amount0, decimals0);
+      const amount1BigInt = parseUnits(amount1, decimals1);
+
+      // Compute poolId deterministically for UI display/redirect.
+      const poolId = await getPoolId(sorted.token0, sorted.token1, feeBps, AMM_CONTRACT_ADDRESS, provider);
+      setResolvedPoolId(poolId);
+
+      // Ensure approvals for both tokens before pool creation.
+      const [allowance0, allowance1] = await Promise.all([
+        getTokenAllowance(provider, sorted.token0, address, AMM_CONTRACT_ADDRESS),
+        getTokenAllowance(provider, sorted.token1, address, AMM_CONTRACT_ADDRESS),
+      ]);
+
+      if (BigInt(allowance0) < amount0BigInt) {
+        const approveTx = await approveToken(signer, sorted.token0, AMM_CONTRACT_ADDRESS);
+        await approveTx.wait();
+      }
+      if (BigInt(allowance1) < amount1BigInt) {
+        const approveTx = await approveToken(signer, sorted.token1, AMM_CONTRACT_ADDRESS);
+        await approveTx.wait();
+      }
 
       const result = await createPool(
-        token0,
-        token1,
+        sorted.token0,
+        sorted.token1,
         amount0BigInt,
         amount1BigInt,
         AMM_CONTRACT_ADDRESS,
         signer
       );
 
-      await result.wait(); // Wait for transaction confirmation
-      
-      setSuccess(`Pool created successfully! Transaction: ${result.hash}`);
-      
-      // Redirect to pools list after a short delay
+      await result.wait();
+      setSuccess(`Pool created successfully! Pool ID: ${poolId}. Transaction: ${result.hash}`);
+
+      // Redirect to the pool details page.
       setTimeout(() => {
-        router.push("/pools");
-      }, 2000);
+        router.push(`/pools/${encodeURIComponent(poolId)}`);
+      }, 1200);
     } catch (err) {
       console.error("Error creating pool:", err);
       setError(err instanceof Error ? err.message : "Failed to create pool");
@@ -167,25 +228,13 @@ export default function CreatePoolPage() {
             <label className="text-xs font-semibold uppercase tracking-[0.35em] text-zinc-500 dark:text-zinc-400">
               Fee Tier
             </label>
-            <div className="mt-3 grid gap-3">
-              {feeTiers.map((tier) => (
-                <label
-                  key={tier.value}
-                  className="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm shadow-sm transition hover:border-emerald-400 dark:border-zinc-700 dark:bg-zinc-950/50"
-                >
-                  <input 
-                    type="radio" 
-                    name="fee-tier" 
-                    className="mt-1 accent-emerald-500" 
-                    checked={selectedFeeTier === tier.value}
-                    onChange={() => setSelectedFeeTier(tier.value)}
-                  />
-                  <div>
-                    <p className="font-semibold text-zinc-900 dark:text-zinc-50">{tier.value}</p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">{tier.description}</p>
-                  </div>
-                </label>
-              ))}
+            <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-700 dark:bg-zinc-950/40">
+              <p className="font-semibold text-zinc-900 dark:text-zinc-50">
+                {defaultFeeBps === null ? "Loading..." : `${(defaultFeeBps / 100).toFixed(2)}%`}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                Fee is read from the AMM contract’s default and is not user-selectable.
+              </p>
             </div>
           </div>
 
@@ -228,6 +277,12 @@ export default function CreatePoolPage() {
           {success && (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200">
               {success}
+            </div>
+          )}
+
+          {resolvedPoolId && !success && (
+            <div className="rounded-2xl border border-zinc-200 bg-white/60 p-4 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950/30 dark:text-zinc-300">
+              Pool ID (computed): {resolvedPoolId}
             </div>
           )}
 
