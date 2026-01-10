@@ -41,7 +41,7 @@ contract QuantumDEXGovernor is
         uint256 _quorumPercentage
     )
         Governor("QuantumDEX Governor")
-        GovernorSettings(_votingDelay, _votingPeriod, _proposalThreshold)
+        GovernorSettings(uint48(_votingDelay), uint32(_votingPeriod), _proposalThreshold)
         GovernorVotes(IVotes(address(_token)))
         GovernorVotesQuorumFraction(_quorumPercentage)
         GovernorTimelockControl(_timelock)
@@ -64,36 +64,37 @@ contract QuantumDEXGovernor is
         }
     }
 
-    /// @notice Get the voting delay (blocks before voting starts)
-    function votingDelay() public view override(IGovernor, GovernorSettings) returns (uint256) {
-        return super.votingDelay();
-    }
-
-    /// @notice Get the voting period (blocks voting is open)
-    function votingPeriod() public view override(IGovernor, GovernorSettings) returns (uint256) {
-        return super.votingPeriod();
-    }
-
-    /// @notice Get the proposal threshold (minimum tokens needed to propose)
+    /// @notice Get proposal threshold (required override)
     function proposalThreshold() public view override(Governor, GovernorSettings) returns (uint256) {
         return super.proposalThreshold();
     }
 
-    /// @notice Get the quorum required for proposal to pass
-    function quorum(
-        uint256 blockNumber
-    ) public view override(IGovernor, GovernorVotesQuorumFraction) returns (uint256) {
-        return super.quorum(blockNumber);
-    }
-
-    /// @notice Check if a proposal state is valid
+    /// @notice Check if a proposal state is valid (required override)
     function state(
         uint256 proposalId
     ) public view override(Governor, GovernorTimelockControl) returns (ProposalState) {
         return super.state(proposalId);
     }
 
-    /// @notice Execute a proposal after timelock
+    /// @notice Check if proposal needs queuing (required override)
+    function proposalNeedsQueuing(
+        uint256 proposalId
+    ) public view override(Governor, GovernorTimelockControl) returns (bool) {
+        return super.proposalNeedsQueuing(proposalId);
+    }
+
+    /// @notice Queue operations to timelock (required override)
+    function _queueOperations(
+        uint256 proposalId,
+        address[] memory targets,
+        uint256[] memory values,
+        bytes[] memory calldatas,
+        bytes32 descriptionHash
+    ) internal override(Governor, GovernorTimelockControl) returns (uint48) {
+        return super._queueOperations(proposalId, targets, values, calldatas, descriptionHash);
+    }
+
+    /// @notice Execute a proposal after timelock (required override)
     function _executeOperations(
         uint256 proposalId,
         address[] memory targets,
@@ -120,11 +121,5 @@ contract QuantumDEXGovernor is
     }
 
 
-    /// @notice Returns whether the interface is supported
-    function supportsInterface(
-        bytes4 interfaceId
-    ) public view override(Governor, GovernorTimelockControl) returns (bool) {
-        return super.supportsInterface(interfaceId);
-    }
 }
 
