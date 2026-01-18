@@ -71,12 +71,6 @@ export async function getDefaultFeeBps(contractAddress: string, provider: Provid
   return Number(fee);
 }
 
-export async function getTokenDecimals(provider: Provider, tokenAddress: string): Promise<number> {
-  if (tokenAddress === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") return 18;
-  const token = new Contract(tokenAddress, ERC20_ABI, provider);
-  const decimals = await token.decimals();
-  return Number(decimals);
-}
 
 /**
  * Get all pools by querying PoolCreated events
@@ -194,7 +188,7 @@ export async function getTokenAllowance(
   spender: string
 ): Promise<string> {
   try {
-    if (tokenAddress === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") return "999999999999999999";
+    if (tokenAddress === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") return "115792089237316195423570985008687907853269984665640564039457584007913129639935"; // Max Uint256 for ETH if used
     const token = new Contract(tokenAddress, ERC20_ABI, provider);
     const allowance = await token.allowance(owner, spender);
     return allowance.toString();
@@ -207,9 +201,12 @@ export async function getTokenAllowance(
 /**
  * ERC20: Get Token Decimals
  */
+/**
+ * ERC20: Get Token Decimals
+ */
 export async function getTokenDecimals(
-  tokenAddress: string,
-  provider: Provider
+  provider: Provider,
+  tokenAddress: string
 ): Promise<number> {
   try {
     if (tokenAddress === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") return 18;
@@ -219,6 +216,23 @@ export async function getTokenDecimals(
   } catch (error) {
     console.error(`Error getting decimals for ${tokenAddress}:`, error);
     return 18; // Default to 18
+  }
+}
+
+/**
+ * ERC20: Get Token Symbol
+ */
+export async function getTokenSymbol(
+  provider: Provider,
+  tokenAddress: string
+): Promise<string> {
+  try {
+    if (tokenAddress === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") return "ETH";
+    const token = new Contract(tokenAddress, ERC20_ABI, provider);
+    return await token.symbol();
+  } catch (error) {
+    console.error(`Error getting symbol for ${tokenAddress}:`, error);
+    return "TOKEN";
   }
 }
 
@@ -492,6 +506,8 @@ export default {
   getUserLiquidity,
   getTokenBalance,
   getTokenAllowance,
+  getTokenDecimals,
+  getTokenSymbol,
   approveToken,
   getQuote,
 };
