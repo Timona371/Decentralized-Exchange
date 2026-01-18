@@ -4,8 +4,17 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAccount, useWalletClient } from "wagmi";
-import { createPool, AMM_CONTRACT_ADDRESS } from "@/lib/amm";
+import {
+  createPool,
+  AMM_CONTRACT_ADDRESS,
+  getTokenDecimals,
+  getTokenAllowance,
+  approveToken,
+  getPoolId,
+  getPool
+} from "@/lib/amm";
 import { walletClientToSigner } from "@/config/adapter";
+import { parseUnits } from "ethers";
 
 const feeTiers = [
   { value: "0.01%", description: "Best for stable pairs with minimal volatility." },
@@ -24,7 +33,7 @@ export default function CreatePoolPage() {
   const { isConnected, address } = useAccount();
   const { data: walletClient } = useWalletClient();
   const router = useRouter();
-  
+
   const [token0, setToken0] = useState("");
   const [token1, setToken1] = useState("");
   const [amount0, setAmount0] = useState("");
@@ -36,7 +45,7 @@ export default function CreatePoolPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!isConnected || !walletClient || !address) {
       setError("Please connect your wallet");
       return;
@@ -62,23 +71,85 @@ export default function CreatePoolPage() {
         throw new Error("Failed to get signer");
       }
 
-      // Convert amounts to BigInt (assuming 18 decimals for now)
-      const amount0BigInt = BigInt(Math.floor(parseFloat(amount0) * 1e18));
-      const amount1BigInt = BigInt(Math.floor(parseFloat(amount1) * 1e18));
+      const provider = signer.provider;
+      if (!provider) {
+        throw new Error("Provider not found");
+      }
 
+      // 1. Sort Tokens
+      const t0 = token0.toLowerCase() < token1.toLowerCase() ? token0 : token1;
+      const t1 = token0.toLowerCase() < token1.toLowerCase() ? token1 : token0;
+      const isSwapped = t0.toLowerCase() !== token0.toLowerCase();
+
+      const a0 = isSwapped ? amount1 : amount0;
+      const a1 = isSwapped ? amount0 : amount1;
+
+      // 2. Parse Fee Tier to BPS
+      const feeBps = selectedFeeTier === "0.01%" ? 1 :
+        selectedFeeTier === "0.03%" ? 3 :
+          selectedFeeTier === "0.05%" ? 5 : 30;
+
+      // 3. Check if Pool Exists
+      const poolId = await getPoolId(t0, t1, feeBps, AMM_CONTRACT_ADDRESS, provider);
+      try {
+        const existingPool = await getPool(poolId, AMM_CONTRACT_ADDRESS, provider);
+        if (existingPool) {
+          throw new Error("Pool already exists for this pair and fee tier");
+        }
+      } catch (e: any) {
+        if (e.message && !e.message.includes("PoolNotFound")) {
+          throw e;
+        }
+      }
+
+      // 4. Fetch Decimals
+      setSuccess("Fetching token information...");
+      const d0 = await getTokenDecimals(t0, provider);
+      const d1 = await getTokenDecimals(t1, provider);
+
+      // 5. Convert amounts to BigInt
+      const amount0BigInt = parseUnits(a0, d0);
+      const amount1BigInt = parseUnits(a1, d1);
+
+      // 6. Handle Approvals
+      setSuccess("Checking token approvals...");
+
+      // Token 0 Approval
+      if (t0 !== "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
+        const allowance0 = await getTokenAllowance(provider, t0, address, AMM_CONTRACT_ADDRESS);
+        if (BigInt(allowance0) < amount0BigInt) {
+          setSuccess(`Approving ${t0.slice(0, 6)}...`);
+          const tx = await approveToken(signer, t0, AMM_CONTRACT_ADDRESS);
+          await tx.wait();
+        }
+      }
+
+      // Token 1 Approval
+      if (t1 !== "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
+        const allowance1 = await getTokenAllowance(provider, t1, address, AMM_CONTRACT_ADDRESS);
+        if (BigInt(allowance1) < amount1BigInt) {
+          setSuccess(`Approving ${t1.slice(0, 6)}...`);
+          const tx = await approveToken(signer, t1, AMM_CONTRACT_ADDRESS);
+          await tx.wait();
+        }
+      }
+
+      // 7. Create Pool
+      setSuccess("Creating pool...");
       const result = await createPool(
-        token0,
-        token1,
+        t0,
+        t1,
         amount0BigInt,
         amount1BigInt,
+        feeBps,
         AMM_CONTRACT_ADDRESS,
         signer
       );
 
       await result.wait(); // Wait for transaction confirmation
-      
+
       setSuccess(`Pool created successfully! Transaction: ${result.hash}`);
-      
+
       // Redirect to pools list after a short delay
       setTimeout(() => {
         router.push("/pools");
@@ -173,10 +244,10 @@ export default function CreatePoolPage() {
                   key={tier.value}
                   className="flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm shadow-sm transition hover:border-emerald-400 dark:border-zinc-700 dark:bg-zinc-950/50"
                 >
-                  <input 
-                    type="radio" 
-                    name="fee-tier" 
-                    className="mt-1 accent-emerald-500" 
+                  <input
+                    type="radio"
+                    name="fee-tier"
+                    className="mt-1 accent-emerald-500"
                     checked={selectedFeeTier === tier.value}
                     onChange={() => setSelectedFeeTier(tier.value)}
                   />
@@ -224,7 +295,7 @@ export default function CreatePoolPage() {
               {error}
             </div>
           )}
-          
+
           {success && (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200">
               {success}
