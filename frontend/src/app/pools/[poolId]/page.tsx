@@ -395,8 +395,8 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ poolId: 
                 <button
                   onClick={() => setActiveTab("add")}
                   className={`px-4 py-3 text-sm font-semibold transition ${activeTab === "add"
-                      ? "border-b-2 border-emerald-500 text-emerald-600 dark:text-emerald-400"
-                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                    ? "border-b-2 border-emerald-500 text-emerald-600 dark:text-emerald-400"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                     }`}
                 >
                   Add Liquidity
@@ -404,8 +404,8 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ poolId: 
                 <button
                   onClick={() => setActiveTab("remove")}
                   className={`px-4 py-3 text-sm font-semibold transition ${activeTab === "remove"
-                      ? "border-b-2 border-emerald-500 text-emerald-600 dark:text-emerald-400"
-                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                    ? "border-b-2 border-emerald-500 text-emerald-600 dark:text-emerald-400"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                     }`}
                 >
                   Remove Liquidity
@@ -421,8 +421,11 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ poolId: 
                     <div className="mt-3 space-y-4">
                       <div className="space-y-2 rounded-2xl border border-zinc-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/50">
                         <div className="flex items-center justify-between text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">
-                          <span>Token 0</span>
-                          <button className="rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] font-semibold text-zinc-500 transition hover:border-emerald-400 hover:text-emerald-500 dark:border-zinc-700">
+                          <span>{token0Symbol}</span>
+                          <button
+                            onClick={handleMaxAmount0}
+                            className="rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] font-semibold text-zinc-500 transition hover:border-emerald-400 hover:text-emerald-500 dark:border-zinc-700"
+                          >
                             Max
                           </button>
                         </div>
@@ -432,31 +435,39 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ poolId: 
                             placeholder={isConnected ? "0.0" : "Connect wallet"}
                             disabled={!isConnected}
                             value={token0Amount}
-                            onChange={(e) => setToken0Amount(e.target.value)}
+                            onChange={(e) => onToken0AmountChange(e.target.value)}
                             className="flex-1 rounded-2xl border border-transparent bg-transparent text-right text-2xl font-semibold tracking-tight text-zinc-900 outline-none placeholder:text-zinc-300 dark:text-zinc-100"
                           />
                         </div>
                         <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-                          <span>Balance: —</span>
-                          <span>Reserve: {poolInfo ? (Number(poolInfo.reserve0) / 1e18).toFixed(4) : "—"}</span>
+                          <span>Balance: {isConnected ? token0Balance : "—"}</span>
+                          <span>Reserve: {poolInfo ? formatUnits(poolInfo.reserve0, token0Decimals) : "—"}</span>
                         </div>
                       </div>
 
                       <div className="space-y-2 rounded-2xl border border-zinc-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/50">
-                        <div className="text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">Token 1</div>
+                        <div className="flex items-center justify-between text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">
+                          <span>{token1Symbol}</span>
+                          <button
+                            onClick={handleMaxAmount1}
+                            className="rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] font-semibold text-zinc-500 transition hover:border-emerald-400 hover:text-emerald-500 dark:border-zinc-700"
+                          >
+                            Max
+                          </button>
+                        </div>
                         <div className="mt-3 flex items-center justify-between gap-4">
                           <input
                             type="number"
                             placeholder={isConnected ? "0.0" : "Connect wallet"}
                             disabled={!isConnected}
                             value={token1Amount}
-                            onChange={(e) => setToken1Amount(e.target.value)}
+                            onChange={(e) => onToken1AmountChange(e.target.value)}
                             className="flex-1 rounded-2xl border border-transparent bg-transparent text-right text-2xl font-semibold tracking-tight text-zinc-900 outline-none placeholder:text-zinc-300 dark:text-zinc-100"
                           />
                         </div>
                         <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-                          <span>Balance: —</span>
-                          <span>Reserve: {poolInfo ? (Number(poolInfo.reserve1) / 1e18).toFixed(4) : "—"}</span>
+                          <span>Balance: {isConnected ? token1Balance : "—"}</span>
+                          <span>Reserve: {poolInfo ? formatUnits(poolInfo.reserve1, token1Decimals) : "—"}</span>
                         </div>
                       </div>
                     </div>
@@ -509,7 +520,10 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ poolId: 
                       <div className="space-y-2 rounded-2xl border border-zinc-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950/50">
                         <div className="flex items-center justify-between text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">
                           <span>LP Tokens</span>
-                          <button className="rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] font-semibold text-zinc-500 transition hover:border-emerald-400 hover:text-emerald-500 dark:border-zinc-700">
+                          <button
+                            onClick={handleMaxLpRemoval}
+                            className="rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] font-semibold text-zinc-500 transition hover:border-emerald-400 hover:text-emerald-500 dark:border-zinc-700"
+                          >
                             Max
                           </button>
                         </div>
@@ -524,8 +538,8 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ poolId: 
                           />
                         </div>
                         <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-                          <span>Your balance: {isConnected ? `${(Number(userLpBalance) / 1e18).toFixed(4)} LP` : "—"}</span>
-                          <span>Total supply: {poolInfo ? `${(Number(poolInfo.totalSupply) / 1e18).toFixed(4)} LP` : "—"}</span>
+                          <span>Your balance: {isConnected ? `${formatUnits(userLpBalance, 18)} LP` : "—"}</span>
+                          <span>Total supply: {poolInfo ? `${formatUnits(poolInfo.totalSupply, 18)} LP` : "—"}</span>
                         </div>
                       </div>
                     </div>
@@ -549,13 +563,13 @@ export default function PoolDetailsPage({ params }: { params: Promise<{ poolId: 
                     </div>
                     <div className="mt-3 space-y-2">
                       <div className="flex items-center justify-between text-xs">
-                        <span>Token 0</span>
+                        <span>{token0Symbol}</span>
                         <span className="font-semibold text-zinc-900 dark:text-zinc-50">
                           {amountsToReceive?.amount0 ?? "—"}
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-xs">
-                        <span>Token 1</span>
+                        <span>{token1Symbol}</span>
                         <span className="font-semibold text-zinc-900 dark:text-zinc-50">
                           {amountsToReceive?.amount1 ?? "—"}
                         </span>
