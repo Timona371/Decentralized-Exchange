@@ -55,7 +55,7 @@ export async function getAllPools(
       const e = event as any;
       if (!e.args) throw new Error("Event args missing");
       const { poolId, token0, token1, feeBps } = e.args;
-      
+
       return {
         poolId: poolId.toString(),
         token0,
@@ -82,7 +82,7 @@ export async function getPool(
   try {
     const amm = new Contract(contractAddress, DEFAULT_AMM_ABI, provider);
     const pool = await amm.getPool(poolId);
-    
+
     if (!pool || pool.token0 === "0x0000000000000000000000000000000000000000") {
       return null;
     }
@@ -154,13 +154,48 @@ export async function getTokenAllowance(
   spender: string
 ): Promise<string> {
   try {
-    if (tokenAddress === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") return "999999999999999999";
+    if (tokenAddress === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") return "115792089237316195423570985008687907853269984665640564039457584007913129639935"; // Max Uint256 for ETH if used
     const token = new Contract(tokenAddress, ERC20_ABI, provider);
     const allowance = await token.allowance(owner, spender);
     return allowance.toString();
   } catch (error) {
     console.error("Error getting allowance:", error);
     return "0";
+  }
+}
+
+/**
+ * ERC20: Get Token Decimals
+ */
+export async function getTokenDecimals(
+  provider: Provider,
+  tokenAddress: string
+): Promise<number> {
+  try {
+    if (tokenAddress === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") return 18;
+    const token = new Contract(tokenAddress, ERC20_ABI, provider);
+    const decimals = await token.decimals();
+    return Number(decimals);
+  } catch (error) {
+    console.error("Error getting decimals:", error);
+    return 18;
+  }
+}
+
+/**
+ * ERC20: Get Token Symbol
+ */
+export async function getTokenSymbol(
+  provider: Provider,
+  tokenAddress: string
+): Promise<string> {
+  try {
+    if (tokenAddress === "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") return "ETH";
+    const token = new Contract(tokenAddress, ERC20_ABI, provider);
+    return await token.symbol();
+  } catch (error) {
+    console.error("Error getting symbol:", error);
+    return "TOKEN";
   }
 }
 
@@ -199,7 +234,7 @@ export async function getQuote(
   try {
     // 1. Get Pool ID
     const poolId = await getPoolId(tokenIn, tokenOut, feeBps, contractAddress, provider);
-    
+
     // 2. Get Pool Data
     const pool = await getPool(poolId, contractAddress, provider);
     if (!pool) return null;
@@ -208,7 +243,7 @@ export async function getQuote(
     // dy = (dx * 997 * y) / (x * 1000 + dx * 997) for 0.3% fee
     // Note: This matches the contract's getAmountOut logic usually
     const amountInBigInt = BigInt(Math.floor(parseFloat(amountIn) * (10 ** decimalsIn)));
-    
+
     let reserveIn, reserveOut;
     // Check which token is which in the pair to determine reserves
     // Note: getPool returns token0/token1/reserve0/reserve1.
@@ -229,7 +264,7 @@ export async function getQuote(
     const amountInWithFee = amountInBigInt * feeMultiplier;
     const numerator = amountInWithFee * reserveOut;
     const denominator = (reserveIn * BigInt(10000)) + amountInWithFee;
-    
+
     return numerator / denominator;
   } catch (error) {
     console.error("Error getting quote:", error);
@@ -340,7 +375,7 @@ export async function swapTokens(
     if (!provider) throw new Error("Signer must have a provider");
 
     const poolId = await getPoolId(tokenIn, tokenOut, feeBps, contractAddress, provider);
-    
+
     const amountInBigInt = BigInt(amountIn);
     const minAmountOutBigInt = BigInt(minAmountOut);
 
@@ -383,6 +418,8 @@ export default {
   getUserLiquidity,
   getTokenBalance,
   getTokenAllowance,
+  getTokenDecimals,
+  getTokenSymbol,
   approveToken,
   getQuote,
 };
