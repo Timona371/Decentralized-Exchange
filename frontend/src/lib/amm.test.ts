@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { normalizeAddress, sortTokenAddresses, getDefaultFeeBps, createPool, addLiquidity, removeLiquidity } from './amm';
+import { normalizeAddress, sortTokenAddresses, getDefaultFeeBps, createPool, addLiquidity, removeLiquidity, swap } from './amm';
 import { isAddress, getAddress, Contract } from 'ethers';
 
 // Mock ethers
@@ -66,6 +66,7 @@ describe('AMM Helpers', () => {
     const mockCreatePool = vi.fn();
     const mockAddLiquidity = vi.fn();
     const mockRemoveLiquidity = vi.fn();
+    const mockSwap = vi.fn();
 
     beforeEach(() => {
       vi.clearAllMocks();
@@ -76,6 +77,7 @@ describe('AMM Helpers', () => {
         createPool: mockCreatePool,
         addLiquidity: mockAddLiquidity,
         removeLiquidity: mockRemoveLiquidity,
+        swap: mockSwap,
       }));
     });
 
@@ -143,6 +145,24 @@ describe('AMM Helpers', () => {
         const result = await removeLiquidity(poolId, liquidity, mockContractAddress, mockSigner);
 
         expect(mockRemoveLiquidity).toHaveBeenCalledWith(poolId, liquidity);
+        expect(result).toBe(mockTx);
+      });
+    });
+
+    describe('swap', () => {
+      it('should call contract swap with correct arguments', async () => {
+        const poolId = '0xPoolId';
+        const tokenIn = '0xTokenIn';
+        const amountIn = 1000n;
+        const minAmountOut = 950n;
+        const recipient = '0xRecipient';
+        
+        const mockTx = { hash: '0xTxHash', wait: vi.fn() };
+        mockSwap.mockResolvedValue(mockTx);
+
+        const result = await swap(poolId, tokenIn, amountIn, minAmountOut, recipient, mockContractAddress, mockSigner);
+
+        expect(mockSwap).toHaveBeenCalledWith(poolId, getAddress(tokenIn), amountIn, minAmountOut, getAddress(recipient));
         expect(result).toBe(mockTx);
       });
     });
