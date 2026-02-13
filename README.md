@@ -1,6 +1,6 @@
-# QuantumDEX
+# Decentralized Exchange
 
-A decentralized exchange (DEX) and token streaming platform built for Ethereum-compatible chains. QuantumDEX combines an automated market maker (AMM) protocol with continuous payment streams, deployed on Base and Base Sepolia testnet.
+A decentralized exchange (DEX) and token streaming platform built for Ethereum-compatible chains. It combines an automated market maker (AMM) protocol with continuous payment streams, deployed on Base and Base Sepolia testnet.
 
 ## 🌟 Features
 
@@ -173,9 +173,6 @@ We welcome contributions! Here's how to get started:
 - Make atomic commits (one logical change per commit)
 - Write clear, descriptive commit messages
 
-## 🔒 Security
-
-**⚠️ Important:** This codebase has NOT undergone a professional security audit. Use at your own risk.
 
 ### Security Features
 - **Minimum Liquidity Lock** - Prevents pool drainage attacks
@@ -183,18 +180,7 @@ We welcome contributions! Here's how to get started:
 - **Checks-Effects-Interactions** - Follows best practice pattern
 - **Safe Math** - Solidity 0.8+ overflow protection
 
-### Reporting Vulnerabilities
-If you discover a security vulnerability, please email [security contact] instead of opening a public issue.
 
-## 📜 License
-
-[Specify your license here - e.g., MIT, Apache 2.0, etc.]
-
-## 🔗 Links
-
-- **GitHub Repository:** https://github.com/QuantumDEX/quantumdex-AMM
-- **Frontend Repository:** (Now merged into this monorepo)
-- **Documentation:** See individual README files in `smartcontract/` and `frontend/`
 
 ## 📞 Support
 
